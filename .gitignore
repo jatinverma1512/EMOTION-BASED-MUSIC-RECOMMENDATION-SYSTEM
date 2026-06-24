@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual Environment
+venv/
+env/
+.env/
+
+# IDE
+.vscode/
+.idea/
+
+# Model files and data
+*.h5
+*.npy
+
+# Logs
+*.log 
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
