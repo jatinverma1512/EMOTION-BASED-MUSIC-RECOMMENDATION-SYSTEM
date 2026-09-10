@@ -108,120 +108,132 @@ label = np.load("labels.npy")
 
 st.header("🎭 Emotion-Based Music Recommender 🎵")
 
-lang = st.text_input("🎤 Enter Language:")
-singer = st.text_input("🎼 Enter Singer Name:")
+col_input1, col_input2 = st.columns(2)
+with col_input1:
+    lang = st.text_input("🎤 Enter Language:", placeholder="e.g. English, Hindi, Punjabi")
+with col_input2:
+    singer = st.text_input("🎼 Enter Singer Name:", placeholder="e.g. Arijit Singh, Dua Lipa")
 
 if "emotion" not in st.session_state:
     st.session_state["emotion"] = ""
 
-if lang and singer and not st.session_state["emotion"]:
-    st.subheader("📷 Camera is ON. Detecting Emotion...")
-    st.caption("Hold a steady expression for a few seconds for better accuracy.")
-    cap = cv2.VideoCapture(0)
-    stframe = st.empty()
+btn_c1, btn_c2 = st.columns(2)
+with btn_c1:
+    detect_btn = st.button("📷 Start Camera & Detect Emotion", use_container_width=True)
+with btn_c2:
+    if st.session_state["emotion"]:
+        if st.button("🔄 Clear / Scan Again", use_container_width=True):
+            st.session_state["emotion"] = ""
+            st.rerun()
 
-    if not cap.isOpened():
-        st.error("⚠ Camera not detected! Please check your webcam.")
-        st.stop()
-
-    with st.spinner("Loading Mediapipe models (first time may take a while)..."):
-        face_landmarker, hand_landmarker = _load_landmarkers()
-
-    start_time = time.time()
-    # Mediapipe's VIDEO-mode tasks require monotonically increasing timestamps.
-    # Streamlit can re-run the script while caching the task objects, so we keep
-    # the last used timestamp in session state across runs.
-    last_ts_ms = int(st.session_state.get("mp_last_ts_ms", 0))
-    predicted_labels: list[str] = []
-
-    while time.time() - start_time < DETECTION_WINDOW_SECONDS:
-        ret, frame = cap.read()
-        if not ret:
-            st.error("⚠ Unable to read from camera!")
-            break
-
-        frame = cv2.flip(frame, 1)
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-
-        ts_ms = int(time.perf_counter() * 1000)
-        if ts_ms <= last_ts_ms:
-            ts_ms = last_ts_ms + 1
-        last_ts_ms = ts_ms
-        st.session_state["mp_last_ts_ms"] = last_ts_ms
-
-        face_res = face_landmarker.detect_for_video(mp_image, ts_ms)
-        hand_res = hand_landmarker.detect_for_video(mp_image, ts_ms)
-
-        # Only predict when face landmarks are present (matches your training/inference logic).
-        if not face_res.face_landmarks:
-            stframe.image(frame, channels="BGR")
-            continue
-
-        face_features = _face_to_features(face_res.face_landmarks[0])
-
-        left_features = [0.0] * (FEATURES_HAND)
-        right_features = [0.0] * (FEATURES_HAND)
-
-        if hand_res.hand_landmarks:
-            for i, hand_landmarks in enumerate(hand_res.hand_landmarks):
-                handedness_name = None
-                if hand_res.handedness and i < len(hand_res.handedness) and hand_res.handedness[i]:
-                    handedness_name = hand_res.handedness[i][0].category_name
-                if handedness_name == "Left":
-                    left_features = _hand_to_features(hand_landmarks)
-                elif handedness_name == "Right":
-                    right_features = _hand_to_features(hand_landmarks)
-
-        feats = face_features + left_features + right_features
-
-        # Mediapipe landmark counts can differ slightly across models/versions.
-        # The neural net expects a fixed input length, so we adapt the feature
-        # vector to match the trained model shape.
-        target_len = int(model.input_shape[-1])
-        if len(feats) != target_len:
-            if len(feats) > target_len:
-                feats = feats[:target_len]
-            else:
-                feats = feats + [0.0] * (target_len - len(feats))
-
-        x = np.asarray(feats, dtype=np.float32).reshape(1, -1)
-        pred_idx = int(np.argmax(model.predict(x, verbose=0)))
-        predicted_labels.append(str(label[pred_idx]))
-
-        cv2.putText(
-            frame,
-            f"Emotion: {predicted_labels[-1]}",
-            (50, 50),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (0, 255, 0),
-            2,
-        )
-        stframe.image(frame, channels="BGR")
-
-    cap.release()
-
-    if len(predicted_labels) < MIN_VALID_PREDICTIONS:
-        st.warning(
-            "Could not collect enough stable frames. Keep your face visible and try again."
-        )
+if detect_btn:
+    if not lang or not singer:
+        st.warning("⚠️ Please enter both Language and Singer name first!")
     else:
-        counts = Counter(predicted_labels)
-        top_emotion, top_count = counts.most_common(1)[0]
-        majority_ratio = top_count / len(predicted_labels)
-        if majority_ratio >= MIN_MAJORITY_RATIO:
-            st.session_state["emotion"] = top_emotion
-            st.success(f"Detected emotion: {top_emotion}")
-        else:
-            # Use the best guess so users can proceed even on noisy webcams.
-            st.session_state["emotion"] = top_emotion
-            st.warning(
-                f"Detection was somewhat unstable; using best guess: {top_emotion}. "
-                "For better accuracy, keep your face centered and well-lit."
-            )
+        st.subheader("📷 Camera is ON. Detecting Emotion...")
+        st.caption("Hold a steady expression for a few seconds for better accuracy.")
+        cap = cv2.VideoCapture(0)
+        stframe = st.empty()
 
-if st.session_state["emotion"] and st.button("🎶 Recommend Songs"):
-    search_query = f"{lang} {st.session_state['emotion']} song {singer}"
-    webbrowser.open(f"https://www.youtube.com/results?search_query={search_query}")
-    st.session_state["emotion"] = ""
+        if not cap.isOpened():
+            st.error("⚠ Camera not detected! Please check your webcam.")
+            st.stop()
+
+        with st.spinner("Loading Mediapipe models (first time may take a while)..."):
+            face_landmarker, hand_landmarker = _load_landmarkers()
+
+        start_time = time.time()
+        last_ts_ms = int(st.session_state.get("mp_last_ts_ms", 0))
+        predicted_labels: list[str] = []
+
+        while time.time() - start_time < DETECTION_WINDOW_SECONDS:
+            ret, frame = cap.read()
+            if not ret:
+                st.error("⚠ Unable to read from camera!")
+                break
+
+            frame = cv2.flip(frame, 1)
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+            ts_ms = int(time.perf_counter() * 1000)
+            if ts_ms <= last_ts_ms:
+                ts_ms = last_ts_ms + 1
+            last_ts_ms = ts_ms
+            st.session_state["mp_last_ts_ms"] = last_ts_ms
+
+            face_res = face_landmarker.detect_for_video(mp_image, ts_ms)
+            hand_res = hand_landmarker.detect_for_video(mp_image, ts_ms)
+
+            if not face_res.face_landmarks:
+                stframe.image(frame, channels="BGR")
+                continue
+
+            face_features = _face_to_features(face_res.face_landmarks[0])
+
+            left_features = [0.0] * (FEATURES_HAND)
+            right_features = [0.0] * (FEATURES_HAND)
+
+            if hand_res.hand_landmarks:
+                for i, hand_landmarks in enumerate(hand_res.hand_landmarks):
+                    handedness_name = None
+                    if hand_res.handedness and i < len(hand_res.handedness) and hand_res.handedness[i]:
+                        handedness_name = hand_res.handedness[i][0].category_name
+                    if handedness_name == "Left":
+                        left_features = _hand_to_features(hand_landmarks)
+                    elif handedness_name == "Right":
+                        right_features = _hand_to_features(hand_landmarks)
+
+            feats = face_features + left_features + right_features
+
+            target_len = int(model.input_shape[-1])
+            if len(feats) != target_len:
+                if len(feats) > target_len:
+                    feats = feats[:target_len]
+                else:
+                    feats = feats + [0.0] * (target_len - len(feats))
+
+            x = np.asarray(feats, dtype=np.float32).reshape(1, -1)
+            pred_idx = int(np.argmax(model.predict(x, verbose=0)))
+            predicted_labels.append(str(label[pred_idx]))
+
+            cv2.putText(
+                frame,
+                f"Emotion: {predicted_labels[-1]}",
+                (50, 50),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (0, 255, 0),
+                2,
+            )
+            stframe.image(frame, channels="BGR")
+
+        cap.release()
+
+        if len(predicted_labels) < MIN_VALID_PREDICTIONS:
+            st.warning(
+                "Could not collect enough stable frames. Keep your face visible and try again."
+            )
+        else:
+            counts = Counter(predicted_labels)
+            top_emotion, top_count = counts.most_common(1)[0]
+            majority_ratio = top_count / len(predicted_labels)
+            st.session_state["emotion"] = top_emotion
+            st.rerun()
+
+if st.session_state["emotion"]:
+    st.divider()
+    st.success(f"🎉 Detected Emotion: **{st.session_state['emotion'].upper()}**")
+
+    search_query = f"{lang} {st.session_state['emotion']} song {singer}".strip()
+    encoded_query = search_query.replace(" ", "+")
+    yt_url = f"https://www.youtube.com/results?search_query={encoded_query}"
+
+    st.markdown(f"#### 🔍 YouTube Search: *\"{search_query}\"*")
+
+    link_col1, link_col2 = st.columns(2)
+    with link_col1:
+        st.link_button("🎶 Open YouTube Search (Direct Tab)", yt_url, use_container_width=True)
+    with link_col2:
+        if st.button("🚀 Open in Browser App", use_container_width=True):
+            webbrowser.open(yt_url)
